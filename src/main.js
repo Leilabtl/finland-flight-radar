@@ -38,8 +38,8 @@ function init() {
   // Fetch initial data
   fetchFlights();
 
-  // Set interval to update every 10 seconds
-  setInterval(fetchFlights, 10000);
+  // Set interval to update every 30 seconds to avoid OpenSky rate limits
+  setInterval(fetchFlights, 30000);
 }
 
 // Custom Plane Icon Generator
