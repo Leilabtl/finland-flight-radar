@@ -9,7 +9,7 @@
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
     
     <!-- Leaflet -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
@@ -21,21 +21,51 @@
     <div id="app">
       <div id="map"></div>
       
-      <div class="glass-panel" id="info-panel">
+      <!-- Left Panel: Airport Boards & Weather -->
+      <div class="glass-panel left-panel" id="airport-panel">
+        <div class="panel-header">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M19 21v-4"/><path d="M19 17a2 2 0 0 0 2-2v-2a2 2 0 1 0-4 0v2a2 2 0 0 0 2 2Z"/><path d="M15 21v-8"/><path d="M15 13a2 2 0 0 0 2-2V9a2 2 0 1 0-4 0v2a2 2 0 0 0 2 2Z"/><path d="M11 21V7"/><path d="M11 7a2 2 0 0 0 2-2V3a2 2 0 1 0-4 0v2a2 2 0 0 0 2 2Z"/><path d="M7 21v-4"/><path d="M7 17a2 2 0 0 0 2-2v-2a2 2 0 1 0-4 0v2a2 2 0 0 0 2 2Z"/></svg>
+          <h2>Airport Hubs</h2>
+        </div>
+        
+        <div class="tabs">
+          <button class="tab-btn active" data-airport="EFHK">HEL</button>
+          <button class="tab-btn" data-airport="EFOU">OUL</button>
+          <button class="tab-btn" data-airport="EFTP">TMP</button>
+        </div>
+
+        <div class="airport-info">
+          <div class="weather-strip" id="weather-info">
+            <span class="weather-loading">Loading weather...</span>
+          </div>
+          <div class="flight-board">
+            <div class="board-header">
+              <span>Flight</span>
+              <span>Status</span>
+            </div>
+            <div id="board-content" class="board-rows">
+              <!-- Flights injected here -->
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right Panel: Flight Details -->
+      <div class="glass-panel right-panel" id="info-panel">
         <div class="panel-header">
           <div class="pulse-dot"></div>
           <h1>Suomi Radar</h1>
         </div>
-        <p class="subtitle">Real-time aircraft tracker for Finland</p>
+        <p class="subtitle">Live ADS-B tracking & Airport Hubs</p>
         
         <div class="stats">
           <div class="stat-box">
             <span class="stat-value" id="flight-count">0</span>
-            <span class="stat-label">Active Flights</span>
+            <span class="stat-label">In Air</span>
           </div>
           <div class="stat-box">
             <span class="stat-value" id="last-update">Now</span>
-            <span class="stat-label">Last Updated</span>
+            <span class="stat-label">Sync</span>
           </div>
         </div>
         
@@ -44,6 +74,11 @@
             <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.2-1.1.7l-1.2 3.3c-.2.5.1 1 .6 1.1l7.3 2-3.2 3.2-3.1-1.1c-.4-.1-.8 0-1 .4l-1.6 3.2c-.2.4 0 .9.4 1l4.2 1.5 1.5 4.2c.1.4.6.6 1 .4l3.2-1.6c.4-.2.5-.6.4-1l-1.1-3.1 3.2-3.2 2 7.3c.1.5.6.8 1.1.6l3.3-1.2c.5-.2.8-.6.7-1.1z"/></svg>
             <p>Select an aircraft on the map to view live details.</p>
           </div>
+        </div>
+
+        <!-- Auth Alert -->
+        <div id="auth-banner" class="banner hidden">
+          <p>Logged in as: <span id="user-display"></span></p>
         </div>
       </div>
     </div>
