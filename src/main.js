@@ -40,6 +40,32 @@ function init() {
 
   // Set interval to update every 30 seconds to avoid OpenSky rate limits
   setInterval(fetchFlights, 30000);
+  
+  // Start the smooth animation loop
+  requestAnimationFrame(animateFlights);
+}
+
+// Smoothly interpolate plane positions
+function animateFlights() {
+  const now = Date.now();
+  Object.values(markers).forEach(marker => {
+    const flight = marker.flightData;
+    if (flight && flight.lastUpdate && flight.velocity && flight.heading) {
+      const dt = (now - flight.lastUpdate) / 1000; // seconds since last update
+      // Only interpolate if within a reasonable timeframe (prevents big jumps when tabbing out)
+      if (dt < 60) {
+        const headingRad = flight.heading * Math.PI / 180;
+        const latSpeed = (flight.velocity * Math.cos(headingRad)) / 111320;
+        const lonSpeed = (flight.velocity * Math.sin(headingRad)) / (111320 * Math.cos(flight.latitude * Math.PI / 180));
+        
+        marker.setLatLng([
+          flight.latitude + (latSpeed * dt),
+          flight.longitude + (lonSpeed * dt)
+        ]);
+      }
+    }
+  });
+  requestAnimationFrame(animateFlights);
 }
 
 // Custom Plane Icon Generator
@@ -138,6 +164,8 @@ function updateMapData(states) {
     if (flight.latitude && flight.longitude) {
       currentIcaos.add(flight.icao24);
       validFlightsCount++;
+      
+      flight.lastUpdate = Date.now();
 
       if (markers[flight.icao24]) {
         // Update existing marker
