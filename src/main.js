@@ -5,18 +5,12 @@ import './style.css';
 const MAP_CENTER = [64.0, 26.0];
 const MAP_ZOOM = 5;
 
-// FlightRadar24 Public Data Feed (Bounding Box for Finland)
-// Bounds format: y1,y2,x1,x2 (North, South, West, East)
-const FR24_URL = 'https://data-cloud.flightradar24.com/zones/fcgi/feed.js?bounds=70.5,59.5,19.0,32.0&faa=1&satellite=1&mlat=1&flarm=1&adsb=1&gnd=1&air=1&vehicles=1&estimated=1&maxage=14400&gliders=1&stats=1';
+// Using Local Proxy (Run 'node proxy.js' in a separate terminal)
+const LOCAL_PROXY = 'http://localhost:3030';
+const API_URL = `${LOCAL_PROXY}/api/flights`;
+const METAR_URL_BASE = `${LOCAL_PROXY}/api/weather?ids=`;
 
-// Proxy to bypass CORS on localhost
-const PROXY = 'https://api.allorigins.win/raw?url=';
-const API_URL = `${PROXY}${encodeURIComponent(FR24_URL)}`;
-
-// METAR Weather API via Proxy
-const METAR_API_BASE = `${PROXY}${encodeURIComponent('https://aviationweather.gov/api/data/metar?format=json&ids=')}`;
-
-// --- AIRPORT BOARDS ---
+// --- HUB FLIGHTS ---
 const MOCK_AIRPORT_FLIGHTS = {
   EFHK: [
     { flight: 'AY1331', dest: 'London LHR', status: 'Boarding' },
@@ -33,6 +27,7 @@ let map;
 let markers = {};
 let selectedFlight = null;
 let currentAirport = 'EFHK';
+let mockStates = null;
 
 // --- INITIALIZATION ---
 function init() {
@@ -57,7 +52,7 @@ function init() {
   fetchFlights();
   refreshAirportData();
   
-  setInterval(fetchFlights, 8000); // FR24 updates every few seconds
+  setInterval(fetchFlights, 10000); 
   setInterval(refreshAirportData, 300000);
   
   requestAnimationFrame(animateFlights);
@@ -68,47 +63,57 @@ async function fetchFlights() {
   try {
     const response = await fetch(API_URL);
     if (!response.ok) throw new Error(`Status ${response.status}`);
-    const resData = await response.json();
+    const data = await response.json();
     
-    // AllOrigins returns data in a 'contents' field
-    if (!resData || !resData.contents) throw new Error('Proxy returned empty content');
-    
-    const data = JSON.parse(resData.contents);
-    
-    if (typeof data !== 'object') throw new Error('Data is not a valid object');
-
-    // FR24 format is an object where keys are flight IDs and values are arrays
+    // Process FlightRadar24 feed format
     const flights = Object.entries(data)
       .filter(([key, val]) => Array.isArray(val))
       .map(([id, val]) => ({
         id: id,
-        icao: val[0],
-        lat: val[1],
-        lon: val[2],
-        track: val[3],
-        alt: val[4],
-        speed: val[5],
-        squawk: val[6],
-        radar: val[7],
-        type: val[8],
-        reg: val[9],
-        timestamp: val[10],
-        origin: val[11],
-        dest: val[12],
-        flightNumber: val[13],
-        verticalSpeed: val[15],
-        callsign: val[16]
+        callsign: val[16] || val[13] || 'N/A',
+        type: val[8] || 'Unknown',
+        latitude: val[1],
+        longitude: val[2],
+        heading: val[3] || 0,
+        altitude: val[4] * 0.3048,
+        velocity: val[5] * 0.51444,
+        origin: val[11] || 'N/A',
+        dest: val[12] || 'N/A',
+        lastUpdate: Date.now()
       }));
 
-    updateMapData(flights);
-    
-    document.getElementById('last-update').textContent = 'LIVE';
-    document.getElementById('last-update').style.color = 'var(--success)';
+    if (flights.length > 0) {
+      updateMapData(flights);
+      document.getElementById('last-update').textContent = 'LIVE';
+      document.getElementById('last-update').style.color = 'var(--success)';
+    } else {
+      throw new Error('No aircraft in local airspace');
+    }
   } catch (error) {
-    console.warn('Data update error (rate limit or parse error):', error);
-    document.getElementById('last-update').textContent = 'OFFLINE';
-    document.getElementById('last-update').style.color = 'var(--danger)';
+    console.warn('API sync issue. Fallback active.', error);
+    runMockData();
   }
+}
+
+function runMockData() {
+  if (!mockStates) {
+    mockStates = [
+      { id: 'f1', callsign: 'FIN901', type: 'A359', latitude: 60.31, longitude: 24.93, heading: 45, altitude: 10000, velocity: 250, origin: 'HEL', dest: 'LHR', lastUpdate: Date.now() },
+      { id: 'f2', callsign: 'AY1331', type: 'A320', latitude: 61.49, longitude: 23.78, heading: 310, altitude: 11000, velocity: 230, origin: 'HEL', dest: 'TMP', lastUpdate: Date.now() }
+    ];
+  }
+  
+  mockStates.forEach(f => {
+    const rad = f.heading * Math.PI / 180;
+    const speed = f.velocity / 10000;
+    f.longitude += Math.sin(rad) * speed;
+    f.latitude += Math.cos(rad) * speed;
+    f.lastUpdate = Date.now();
+  });
+  
+  updateMapData(mockStates);
+  document.getElementById('last-update').textContent = 'MOCK';
+  document.getElementById('last-update').style.color = 'var(--warning)';
 }
 
 function updateMapData(flights) {
@@ -116,35 +121,19 @@ function updateMapData(flights) {
   let count = 0;
 
   flights.forEach(f => {
-    if (f.lat && f.lon) {
-      currentIds.add(f.id);
-      count++;
+    currentIds.add(f.id);
+    count++;
 
-      const flightData = {
-        id: f.id,
-        callsign: f.callsign || f.flightNumber || 'N/A',
-        type: f.type || 'Unknown',
-        latitude: f.lat,
-        longitude: f.lon,
-        heading: f.track || 0,
-        altitude: f.alt * 0.3048, // feet to meters
-        velocity: f.speed * 0.51444, // knots to m/s
-        origin: f.origin || 'N/A',
-        dest: f.dest || 'N/A',
-        lastUpdate: Date.now()
-      };
-
-      if (markers[f.id]) {
-        markers[f.id].setLatLng([f.lat, f.lon]);
-        markers[f.id].setIcon(getPlaneIcon(f.track));
-        markers[f.id].flightData = flightData;
-        if (selectedFlight === f.id) updateSidePanel(flightData);
-      } else {
-        const marker = L.marker([f.lat, f.lon], { icon: getPlaneIcon(f.track) }).addTo(map);
-        marker.flightData = flightData;
-        marker.on('click', () => { selectedFlight = f.id; updateSidePanel(flightData); });
-        markers[f.id] = marker;
-      }
+    if (markers[f.id]) {
+      markers[f.id].setLatLng([f.latitude, f.longitude]);
+      markers[f.id].setIcon(getPlaneIcon(f.heading));
+      markers[f.id].flightData = f;
+      if (selectedFlight === f.id) updateSidePanel(f);
+    } else {
+      const marker = L.marker([f.latitude, f.longitude], { icon: getPlaneIcon(f.heading) }).addTo(map);
+      marker.flightData = f;
+      marker.on('click', () => { selectedFlight = f.id; updateSidePanel(f); });
+      markers[f.id] = marker;
     }
   });
 
@@ -165,7 +154,7 @@ function animateFlights() {
     const f = marker.flightData;
     if (f?.lastUpdate && f.velocity && f.heading) {
       const dt = (now - f.lastUpdate) / 1000;
-      if (dt < 20) { // Limit interpolation to prevent gliding off-screen
+      if (dt < 60) {
         const rad = f.heading * Math.PI / 180;
         const latS = (f.velocity * Math.cos(rad)) / 111320;
         const lonS = (f.velocity * Math.sin(rad)) / (111320 * Math.cos(f.latitude * Math.PI / 180));
@@ -182,21 +171,19 @@ async function refreshAirportData() {
   const boardEl = document.getElementById('board-content');
 
   try {
-    const res = await fetch(`${METAR_API_BASE}${currentAirport}`);
+    const res = await fetch(`${METAR_URL_BASE}${currentAirport}`);
+    if (!res.ok) throw new Error();
     const data = await res.json();
-    if (data.contents) {
-      const parsed = JSON.parse(data.contents);
-      if (parsed.length > 0) {
-        const m = parsed[0];
-        weatherEl.innerHTML = `
-          <div style="display: flex; flex-direction: column; gap: 4px;">
-            <div><strong>${currentAirport}</strong>: ${Math.round(m.temp)}°C</div>
-            <div style="font-size: 0.7rem; opacity: 0.8;">Wind: ${m.wdir}° @ ${Math.round(m.wspd)}kt | Vis: ${m.visib}mi</div>
-          </div>
-        `;
-      }
+    if (data.length > 0) {
+      const m = data[0];
+      weatherEl.innerHTML = `
+        <div style="display: flex; flex-direction: column; gap: 4px;">
+          <div><strong>${currentAirport}</strong>: ${Math.round(m.temp)}°C</div>
+          <div style="font-size: 0.7rem; opacity: 0.8;">Wind: ${m.wdir}° @ ${Math.round(m.wspd)}kt | Vis: ${m.visib}mi</div>
+        </div>
+      `;
     }
-  } catch (e) { weatherEl.textContent = `Weather Offline`; }
+  } catch (e) { weatherEl.textContent = `Weather Server Offline`; }
 
   const flights = MOCK_AIRPORT_FLIGHTS[currentAirport] || [];
   boardEl.innerHTML = flights.map(f => `
@@ -220,11 +207,11 @@ function updateSidePanel(f) {
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.2-1.1.7l-1.2 3.3c-.2.5.1 1 .6 1.1l7.3 2-3.2 3.2-3.1-1.1c-.4-.1-.8 0-1 .4l-1.6 3.2c-.2.4 0 .9.4 1l4.2 1.5 1.5 4.2c.1.4.6.6 1 .4l3.2-1.6c.4-.2.5-.6.4-1l-1.1-3.1 3.2-3.2 2 7.3c.1.5.6.8 1.1.6l3.3-1.2c.5-.2.8-.6.7-1.1z"/></svg>
       Flight ${f.callsign}
     </div>
+    <div class="detail-row"><span class="detail-label">Type</span><span class="detail-value">${f.type}</span></div>
     <div class="detail-row"><span class="detail-label">Route</span><span class="detail-value">${f.origin} ➔ ${f.dest}</span></div>
     <div class="detail-row"><span class="detail-label">Altitude</span><span class="detail-value">${Math.round(f.altitude)}m</span></div>
-    <div class="detail-row"><span class="detail-label">Ground Speed</span><span class="detail-value">${Math.round(f.velocity * 3.6)} km/h</span></div>
-    <div class="detail-row"><span class="detail-label">Aircraft Type</span><span class="detail-value">${f.type}</span></div>
-    <div class="detail-row"><span class="detail-label">ID</span><span class="detail-value" style="font-size: 0.7rem">${f.id}</span></div>
+    <div class="detail-row"><span class="detail-label">Heading</span><span class="detail-value">${Math.round(f.heading)}°</span></div>
+    <div class="detail-row"><span class="detail-label">Speed</span><span class="detail-value" style="font-size: 0.7rem">${Math.round(f.velocity * 3.6)} km/h</span></div>
   `;
 }
 
