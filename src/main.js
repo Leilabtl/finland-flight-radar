@@ -68,10 +68,16 @@ async function fetchFlights() {
   try {
     const response = await fetch(API_URL);
     if (!response.ok) throw new Error(`Status ${response.status}`);
-    const data = await response.json();
+    const resData = await response.json();
     
+    // AllOrigins returns data in a 'contents' field
+    if (!resData || !resData.contents) throw new Error('Proxy returned empty content');
+    
+    const data = JSON.parse(resData.contents);
+    
+    if (typeof data !== 'object') throw new Error('Data is not a valid object');
+
     // FR24 format is an object where keys are flight IDs and values are arrays
-    // We filter out metadata keys like 'full_count', 'version', etc.
     const flights = Object.entries(data)
       .filter(([key, val]) => Array.isArray(val))
       .map(([id, val]) => ({
@@ -99,7 +105,7 @@ async function fetchFlights() {
     document.getElementById('last-update').textContent = 'LIVE';
     document.getElementById('last-update').style.color = 'var(--success)';
   } catch (error) {
-    console.error('Data update error:', error);
+    console.warn('Data update error (rate limit or parse error):', error);
     document.getElementById('last-update').textContent = 'OFFLINE';
     document.getElementById('last-update').style.color = 'var(--danger)';
   }
